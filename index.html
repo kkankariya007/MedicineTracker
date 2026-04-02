@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medicine Tracker</title>
+
+  <!-- SEO & Social -->
+  <meta name="description" content="Track your daily medicines — Bramhi, Collagen, Meloset & more. Beautiful calendar view with streaks and progress." />
+  <meta name="theme-color" content="#6366f1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Med Tracker" />
+  <meta property="og:title" content="Medicine Tracker" />
+  <meta property="og:description" content="Track your daily medicines with streaks, progress rings, and a gorgeous calendar." />
+  <meta property="og:type" content="website" />
+
+  <!-- Favicon (inline SVG data-uri so no external file needed) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💊</text></svg>" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Firebase SDK (Realtime Database for cross-device sync) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ───── Reset & Base ───── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f0eb;
+      --bg2: #ece6de;
+      --card: #ffffffcc;
+      --card-solid: #ffffff;
+      --text: #1e1b18;
+      --text2: #6b6560;
+      --text3: #9e9790;
+      --accent: #6366f1;
+      --med1: #6366f1;  /* Bramhi + Collagen */
+      --med2: #f59e0b;  /* Morning Medicine */
+      --med3: #a855f7;  /* Evening Medicine */
+      --med4: #3b82f6;  /* Meloset + Sleep */
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+      --shadow-lg: 0 4px 12px rgba(0,0,0,.08), 0 16px 40px rgba(0,0,0,.1);
+      --transition: .2s cubic-bezier(.4,0,.2,1);
+    }
+
+    html { font-size: 15px; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ───── Layout Shell ───── */
+    .app {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+
+    /* ───── Header ───── */
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .header h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -.03em;
+      background: linear-gradient(135deg, var(--med1), var(--med4));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { color: var(--text2); margin-top: .35rem; font-size: .9rem; }
+
+    /* ───── Stats Row ───── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .75rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--card);
+      backdrop-filter: blur(20px);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,.6);
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 600; }
+    .stat-value { font-size: 1.6rem; font-weight: 700; margin-top: .2rem; }
+    .stat-sub { font-size: .75rem; color: var(--text2); margin-top: .15rem; }
+
+    /* ───── Month Navigation ───── */
+    .month-nav {
+      display: flex;
+      gap: .5rem;
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding-bottom: 2px;
+    }
+    .month-nav::-webkit-scrollbar { display: none; }
+    .month-btn {
+      padding: .6rem 1.25rem;
+      border-radius: 50px;
+      border: 1.5px solid var(--bg2);
+      background: var(--card);
+      font-family: inherit;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--text2);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all var(--transition);
+    }
+    .month-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .month-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 2px 12px rgba(99,102,241,.3);
+    }
+
+    /* ───── Legend ───── */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .6rem 1.25rem;
+      margin-bottom: 1.25rem;
+      padding: .85rem 1.1rem;
+      background: var(--card);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,.6);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .78rem;
+      font-weight: 500;
+      color: var(--text2);
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ───── Calendar Grid ───── */
+    .calendar-card {
+      background: var(--card-solid);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,.04);
+    }
+    .cal-header {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      background: var(--bg2);
+      border-bottom: 1px solid rgba(0,0,0,.05);
+    }
+    .cal-header span {
+      text-align: center;
+      padding: .7rem 0;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text3);
+    }
+    .cal-body {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+    }
+    .cal-cell {
+      aspect-ratio: 1;
+      border: .5px solid rgba(0,0,0,.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 4px;
+      cursor: pointer;
+      position: relative;
+      transition: background var(--transition);
+    }
+    .cal-cell:hover { background: rgba(99,102,241,.04); }
+    .cal-cell.empty { cursor: default; background: transparent; }
+    .cal-cell.today {
+      background: rgba(99,102,241,.07);
+    }
+    .cal-cell.today::after {
+      content: '';
+      position: absolute;
+      inset: 2px;
+      border-radius: 8px;
+      border: 2px solid var(--accent);
+      pointer-events: none;
+      opacity: .5;
+    }
+    .cal-cell.future { opacity: .45; }
+    .cal-day {
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1;
+    }
+    .cal-dots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+    }
+    .cal-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--bg2);
+      transition: all .3s cubic-bezier(.34,1.56,.64,1);
+    }
+    .cal-dot.checked { transform: scale(1.15); }
+    .cal-dot.med1.checked { background: var(--med1); box-shadow: 0 0 6px rgba(99,102,241,.4); }
+    .cal-dot.med2.checked { background: var(--med2); box-shadow: 0 0 6px rgba(245,158,11,.4); }
+    .cal-dot.med3.checked { background: var(--med3); box-shadow: 0 0 6px rgba(168,85,247,.4); }
+    .cal-dot.med4.checked { background: var(--med4); box-shadow: 0 0 6px rgba(59,130,246,.4); }
+
+    /* ───── Day Detail Panel (slide-up) ───── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.25);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+    .overlay.open { opacity: 1; pointer-events: auto; }
+
+    .day-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--card-solid);
+      border-radius: 24px 24px 0 0;
+      box-shadow: 0 -8px 40px rgba(0,0,0,.12);
+      z-index: 101;
+      transform: translateY(100%);
+      transition: transform .35s cubic-bezier(.32,.72,0,1);
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 2.5rem;
+    }
+    .day-panel.open { transform: translateY(0); }
+    .day-panel .handle {
+      width: 36px; height: 4px;
+      border-radius: 4px;
+      background: var(--bg2);
+      margin: 0 auto 1.25rem;
+    }
+    .day-panel h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      text-align: center;
+    }
+
+    /* ───── Medicine Toggle Items ───── */
+    .med-item {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      padding: .85rem 1rem;
+      border-radius: var(--radius-sm);
+      margin-bottom: .6rem;
+      cursor: pointer;
+      transition: background var(--transition);
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .med-item:hover { background: var(--bg); }
+    .med-item:active { transform: scale(.99); }
+
+    .med-toggle {
+      width: 26px; height: 26px;
+      border-radius: 8px;
+      border: 2px solid var(--bg2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    }
+    .med-toggle svg {
+      width: 14px; height: 14px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+      opacity: 0;
+      transform: scale(.5);
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    }
+    .med-item.checked .med-toggle svg { opacity: 1; transform: scale(1); }
+    .med-item.checked .med-toggle.c1 { background: var(--med1); border-color: var(--med1); }
+    .med-item.checked .med-toggle.c2 { background: var(--med2); border-color: var(--med2); }
+    .med-item.checked .med-toggle.c3 { background: var(--med3); border-color: var(--med3); }
+    .med-item.checked .med-toggle.c4 { background: var(--med4); border-color: var(--med4); }
+
+    .med-info { flex: 1; }
+    .med-name { font-weight: 600; font-size: .92rem; }
+    .med-desc { font-size: .75rem; color: var(--text3); margin-top: .1rem; }
+
+    .med-emoji {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+
+    /* ───── Progress Ring (per-medicine) ───── */
+    .progress-section {
+      margin-top: 2rem;
+    }
+    .progress-section h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+    .progress-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .75rem;
+    }
+    .progress-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 1rem;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,.5);
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      transition: transform var(--transition);
+    }
+    .progress-card:hover { transform: translateY(-1px); }
+    .ring-wrap { position: relative; width: 48px; height: 48px; flex-shrink: 0; }
+    .ring-wrap svg { width: 48px; height: 48px; transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke: var(--bg2); stroke-width: 4; }
+    .ring-fg { fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1); }
+    .ring-pct {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .65rem; font-weight: 700; color: var(--text);
+    }
+    .progress-card .pc-name { font-size: .8rem; font-weight: 600; }
+    .progress-card .pc-streak { font-size: .7rem; color: var(--text3); margin-top: .15rem; }
+
+    /* ───── Confetti Canvas ───── */
+    #confetti-canvas {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 200;
+    }
+
+    /* ───── Animations ───── */
+    @keyframes pop-in {
+      0% { transform: scale(.7); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .pop-in { animation: pop-in .4s cubic-bezier(.34,1.56,.64,1) both; }
+
+    @keyframes fade-up {
+      0% { transform: translateY(12px); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .fade-up { animation: fade-up .5s ease both; }
+
+    /* ───── Responsive ───── */
+    @media (max-width: 600px) {
+      html { font-size: 14px; }
+      .app { padding: 1.25rem .85rem 3rem; }
+      .progress-grid { grid-template-columns: 1fr; }
+      .cal-dot { width: 6px; height: 6px; }
+      .cal-dots { gap: 1.5px; }
+      .cal-cell { padding: 2px; gap: 2px; }
+      .cal-day { font-size: .62rem; }
+    }
+
+    /* ───── Toast ───── */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      background: var(--text);
+      color: #fff;
+      padding: .65rem 1.25rem;
+      border-radius: 50px;
+      font-size: .82rem;
+      font-weight: 500;
+      box-shadow: var(--shadow-lg);
+      z-index: 300;
+      transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+      white-space: nowrap;
+    }
+    .toast.visible { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <canvas id="confetti-canvas"></canvas>
+  <div class="toast" id="toast"></div>
+
+  <div class="app">
+    <!-- Header -->
+    <header class="header fade-up">
+      <h1>💊 Medicine Tracker</h1>
+      <p id="header-sub">Stay consistent, stay healthy</p>
+    </header>
+
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Month Navigation -->
+    <nav class="month-nav" id="month-nav"></nav>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--med1)"></span>Bramhi + Collagen</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--med2)"></span>Morning Medicine</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--med3)"></span>Evening Medicine</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--med4)"></span>Meloset + Sleep</div>
+    </div>
+
+    <!-- Calendar -->
+    <div class="calendar-card" id="calendar-card">
+      <div class="cal-header">
+        <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+      </div>
+      <div class="cal-body" id="cal-body"></div>
+    </div>
+
+    <!-- Per-medicine Progress -->
+    <div class="progress-section fade-up">
+      <h2>Progress</h2>
+      <div class="progress-grid" id="progress-grid"></div>
+    </div>
+  </div>
+
+  <!-- Day Detail Panel -->
+  <div class="overlay" id="overlay"></div>
+  <div class="day-panel" id="day-panel">
+    <div class="handle"></div>
+    <h3 id="panel-title">—</h3>
+    <div id="panel-items"></div>
+  </div>
+
+  <script>
+    /* ═══════════════════════════════════════════
+       DATA & CONFIG
+    ═══════════════════════════════════════════ */
+    /* ═══════════════════════════════════════════
+       FIREBASE CONFIG — Fill in your project details
+       See README or console.firebase.google.com
+    ═══════════════════════════════════════════ */
+    const firebaseConfig = {
+      apiKey: "AIzaSyBMLlovMi3yIGKE10riUA98NVl6_fDEnJ0",
+      authDomain: "medicinetracker-2f54a.firebaseapp.com",
+      databaseURL: "https://medicinetracker-2f54a-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "medicinetracker-2f54a",
+      storageBucket: "medicinetracker-2f54a.firebasestorage.app",
+      messagingSenderId: "231299738578",
+      appId: "1:231299738578:web:0c61023f2dab1735fd360b",
+      measurementId: "G-WQB4JKLH0J"
+    };
+
+    let firebaseReady = false;
+    let dataRef = null;
+    try {
+      if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+        firebase.initializeApp(firebaseConfig);
+        dataRef = firebase.database().ref('medicine_tracker');
+        firebaseReady = true;
+      }
+    } catch (e) {
+      console.warn('Firebase init failed, using localStorage only:', e);
+    }
+
+    const MEDICINES = [
+      { id: 'med1', name: 'Bramhi + Collagen', desc: 'Brain & skin health', emoji: '🧠', color: '#6366f1' },
+      { id: 'med2', name: 'Morning Medicine', desc: 'Start the day right', emoji: '🌅', color: '#f59e0b' },
+      { id: 'med3', name: 'Evening Medicine', desc: 'Wind-down dose', emoji: '🌇', color: '#a855f7' },
+      { id: 'med4', name: 'Meloset + Sleep', desc: 'Rest & recovery', emoji: '🌙', color: '#3b82f6' },
+    ];
+
+    const MONTHS = [
+      { year: 2026, month: 2, label: 'Mar 2026' },   // March (0-indexed: 2)
+      { year: 2026, month: 3, label: 'Apr 2026' },
+      { year: 2026, month: 4, label: 'May 2026' },
+      { year: 2026, month: 5, label: 'Jun 2026' },
+    ];
+
+    const START_DATE = new Date(2026, 2, 27); // March 27, 2026
+
+    let data = loadData();
+    let currentMonthIdx = 0;
+    let openDay = null;
+
+    /* ═══════════════════════════════════════════
+       PERSISTENCE
+    ═══════════════════════════════════════════ */
+    function storageKey() { return 'medicine_tracker_v1'; }
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(storageKey());
+        return raw ? JSON.parse(raw) : {};
+      } catch { return {}; }
+    }
+
+    function saveData() {
+      localStorage.setItem(storageKey(), JSON.stringify(data));
+      if (firebaseReady && dataRef) {
+        dataRef.set(data).catch(err => console.warn('Firebase write failed:', err));
+      }
+    }
+
+    // Listen for real-time changes from other devices
+    if (firebaseReady && dataRef) {
+      dataRef.on('value', (snapshot) => {
+        const remoteData = snapshot.val();
+        if (remoteData) {
+          data = remoteData;
+          localStorage.setItem(storageKey(), JSON.stringify(data));
+          renderAll();
+          if (openDay) {
+            openDayPanel(openDay.y, openDay.m, openDay.d);
+          }
+        }
+      });
+    }
+
+    function dayKey(y, m, d) { return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
+
+    function isChecked(dateKey, medId) {
+      return !!(data[dateKey] && data[dateKey][medId]);
+    }
+
+    function toggleMed(dateKey, medId) {
+      if (!data[dateKey]) data[dateKey] = {};
+      data[dateKey][medId] = !data[dateKey][medId];
+      saveData();
+    }
+
+    /* ═══════════════════════════════════════════
+       HELPERS
+    ═══════════════════════════════════════════ */
+    function today() {
+      const t = new Date();
+      return dayKey(t.getFullYear(), t.getMonth(), t.getDate());
+    }
+
+    function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+
+    // Monday = 0 ... Sunday = 6  (ISO)
+    function startDay(y, m) {
+      const d = new Date(y, m, 1).getDay();
+      return d === 0 ? 6 : d - 1;
+    }
+
+    function isInRange(y, m, d) {
+      const dt = new Date(y, m, d);
+      return dt >= START_DATE;
+    }
+
+    function isFuture(y, m, d) {
+      const dt = new Date(y, m, d);
+      const now = new Date();
+      now.setHours(0,0,0,0);
+      return dt > now;
+    }
+
+    function isToday(y, m, d) {
+      const now = new Date();
+      return y === now.getFullYear() && m === now.getMonth() && d === now.getDate();
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER — MONTH NAV
+    ═══════════════════════════════════════════ */
+    function renderMonthNav() {
+      const nav = document.getElementById('month-nav');
+      nav.innerHTML = '';
+      MONTHS.forEach((mo, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'month-btn' + (i === currentMonthIdx ? ' active' : '');
+        btn.textContent = mo.label;
+        btn.addEventListener('click', () => { currentMonthIdx = i; renderAll(); });
+        nav.appendChild(btn);
+      });
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER — CALENDAR
+    ═══════════════════════════════════════════ */
+    function renderCalendar() {
+      const { year: y, month: m } = MONTHS[currentMonthIdx];
+      const body = document.getElementById('cal-body');
+      body.innerHTML = '';
+      const dim = daysInMonth(y, m);
+      const offset = startDay(y, m);
+
+      // Empty leading cells
+      for (let i = 0; i < offset; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell empty';
+        body.appendChild(cell);
+      }
+
+      for (let d = 1; d <= dim; d++) {
+        const cell = document.createElement('div');
+        const dk = dayKey(y, m, d);
+        const inRange = isInRange(y, m, d);
+        const future = isFuture(y, m, d);
+        const todayFlag = isToday(y, m, d);
+
+        cell.className = 'cal-cell'
+          + (todayFlag ? ' today' : '')
+          + (future ? ' future' : '')
+          + (!inRange ? ' empty' : '');
+
+        const dayEl = document.createElement('span');
+        dayEl.className = 'cal-day';
+        dayEl.textContent = d;
+        cell.appendChild(dayEl);
+
+        if (inRange) {
+          const dots = document.createElement('div');
+          dots.className = 'cal-dots';
+          MEDICINES.forEach(med => {
+            const dot = document.createElement('span');
+            dot.className = `cal-dot ${med.id}` + (isChecked(dk, med.id) ? ' checked' : '');
+            dots.appendChild(dot);
+          });
+          cell.appendChild(dots);
+
+          cell.addEventListener('click', () => openDayPanel(y, m, d));
+        }
+
+        body.appendChild(cell);
+      }
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER — STATS
+    ═══════════════════════════════════════════ */
+    function computeStats() {
+      const now = new Date(); now.setHours(0,0,0,0);
+      let totalPossible = 0;
+      let totalDone = 0;
+      let streakDays = 0;
+      let todayDone = 0;
+
+      // Walk backwards from today to START_DATE for streak
+      const cur = new Date(now);
+      let streakBroken = false;
+
+      while (cur >= START_DATE) {
+        const dk = dayKey(cur.getFullYear(), cur.getMonth(), cur.getDate());
+        const allDone = MEDICINES.every(med => isChecked(dk, med.id));
+        if (!streakBroken) {
+          if (allDone) streakDays++;
+          else if (cur < now) streakBroken = true; // allow partial today
+          else streakBroken = true;
+        }
+        const doneCount = MEDICINES.filter(med => isChecked(dk, med.id)).length;
+        totalPossible += MEDICINES.length;
+        totalDone += doneCount;
+        cur.setDate(cur.getDate() - 1);
+      }
+
+      const tk = today();
+      todayDone = MEDICINES.filter(med => isChecked(tk, med.id)).length;
+
+      return {
+        streak: streakDays,
+        totalPct: totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : 0,
+        todayDone,
+        todayTotal: MEDICINES.length,
+      };
+    }
+
+    function renderStats() {
+      const s = computeStats();
+      const container = document.getElementById('stats');
+      container.innerHTML = `
+        <div class="stat-card fade-up" style="animation-delay:.05s">
+          <div class="stat-label">Today</div>
+          <div class="stat-value">${s.todayDone}/${s.todayTotal}</div>
+          <div class="stat-sub">${s.todayDone === s.todayTotal ? '✅ All done!' : 'Keep going!'}</div>
+        </div>
+        <div class="stat-card fade-up" style="animation-delay:.1s">
+          <div class="stat-label">Current Streak</div>
+          <div class="stat-value">${s.streak} 🔥</div>
+          <div class="stat-sub">day${s.streak !== 1 ? 's' : ''} in a row</div>
+        </div>
+        <div class="stat-card fade-up" style="animation-delay:.15s">
+          <div class="stat-label">Overall</div>
+          <div class="stat-value">${s.totalPct}%</div>
+          <div class="stat-sub">completion rate</div>
+        </div>
+      `;
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER — PROGRESS RINGS
+    ═══════════════════════════════════════════ */
+    function computeMedProgress(medId) {
+      const now = new Date(); now.setHours(0,0,0,0);
+      let total = 0, done = 0, streak = 0;
+      const cur = new Date(now);
+      let streakBroken = false;
+
+      while (cur >= START_DATE) {
+        const dk = dayKey(cur.getFullYear(), cur.getMonth(), cur.getDate());
+        total++;
+        if (isChecked(dk, medId)) {
+          done++;
+          if (!streakBroken) streak++;
+        } else {
+          if (cur < now) streakBroken = true;
+          else streakBroken = true;
+        }
+        cur.setDate(cur.getDate() - 1);
+      }
+      return { pct: total > 0 ? Math.round((done / total) * 100) : 0, streak };
+    }
+
+    function renderProgress() {
+      const grid = document.getElementById('progress-grid');
+      grid.innerHTML = '';
+      MEDICINES.forEach((med, i) => {
+        const p = computeMedProgress(med.id);
+        const circ = 2 * Math.PI * 18;
+        const offset = circ - (circ * p.pct / 100);
+        const card = document.createElement('div');
+        card.className = 'progress-card fade-up';
+        card.style.animationDelay = `${.2 + i * .07}s`;
+        card.innerHTML = `
+          <div class="ring-wrap">
+            <svg viewBox="0 0 44 44">
+              <circle class="ring-bg" cx="22" cy="22" r="18"/>
+              <circle class="ring-fg" cx="22" cy="22" r="18" stroke="${med.color}"
+                stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+            </svg>
+            <span class="ring-pct">${p.pct}%</span>
+          </div>
+          <div>
+            <div class="pc-name">${med.emoji} ${med.name}</div>
+            <div class="pc-streak">${p.streak} day streak</div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    /* ═══════════════════════════════════════════
+       DAY PANEL
+    ═══════════════════════════════════════════ */
+    function openDayPanel(y, m, d) {
+      openDay = { y, m, d };
+      const dk = dayKey(y, m, d);
+      const date = new Date(y, m, d);
+      const label = date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      const future = isFuture(y, m, d);
+
+      document.getElementById('panel-title').textContent = label;
+      const items = document.getElementById('panel-items');
+      items.innerHTML = '';
+
+      MEDICINES.forEach((med, i) => {
+        const checked = isChecked(dk, med.id);
+        const item = document.createElement('div');
+        item.className = 'med-item' + (checked ? ' checked' : '');
+        item.innerHTML = `
+          <span class="med-emoji">${med.emoji}</span>
+          <div class="med-toggle c${i + 1}">
+            <svg viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6"/></svg>
+          </div>
+          <div class="med-info">
+            <div class="med-name">${med.name}</div>
+            <div class="med-desc">${med.desc}</div>
+          </div>
+        `;
+
+        if (!future) {
+          item.addEventListener('click', () => {
+            toggleMed(dk, med.id);
+            const nowChecked = isChecked(dk, med.id);
+            item.classList.toggle('checked', nowChecked);
+            renderCalendar();
+            renderStats();
+            renderProgress();
+
+            // Check if all done for today
+            if (dk === today() && MEDICINES.every(me => isChecked(dk, me.id))) {
+              showToast('🎉 All medicines taken today!');
+              fireConfetti();
+            }
+          });
+        } else {
+          item.style.opacity = '.4';
+          item.style.cursor = 'default';
+        }
+
+        items.appendChild(item);
+      });
+
+      document.getElementById('overlay').classList.add('open');
+      document.getElementById('day-panel').classList.add('open');
+    }
+
+    function closeDayPanel() {
+      document.getElementById('overlay').classList.remove('open');
+      document.getElementById('day-panel').classList.remove('open');
+      openDay = null;
+    }
+
+    document.getElementById('overlay').addEventListener('click', closeDayPanel);
+
+    /* ═══════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════ */
+    let toastTimer = null;
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('visible'), 2500);
+    }
+
+    /* ═══════════════════════════════════════════
+       CONFETTI  (lightweight canvas confetti)
+    ═══════════════════════════════════════════ */
+    function fireConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const pieces = [];
+      const colors = ['#6366f1','#f59e0b','#a855f7','#3b82f6','#10b981','#f43f5e'];
+
+      for (let i = 0; i < 80; i++) {
+        pieces.push({
+          x: canvas.width / 2 + (Math.random() - .5) * 200,
+          y: canvas.height / 2,
+          vx: (Math.random() - .5) * 14,
+          vy: -Math.random() * 16 - 4,
+          r: Math.random() * 5 + 2,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          life: 1,
+        });
+      }
+
+      let frame = 0;
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let alive = false;
+        pieces.forEach(p => {
+          if (p.life <= 0) return;
+          alive = true;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += .35;
+          p.vx *= .99;
+          p.life -= .012;
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        if (alive && frame < 180) { frame++; requestAnimationFrame(draw); }
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      draw();
+    }
+
+    /* ═══════════════════════════════════════════
+       RENDER ALL
+    ═══════════════════════════════════════════ */
+    function renderAll() {
+      renderMonthNav();
+      renderCalendar();
+      renderStats();
+      renderProgress();
+    }
+
+    // Auto-select the month that contains today
+    (function init() {
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      const idx = MONTHS.findIndex(mo => mo.year === y && mo.month === m);
+      if (idx !== -1) currentMonthIdx = idx;
+      renderAll();
+    })();
+
+    // Register service worker for offline / PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
